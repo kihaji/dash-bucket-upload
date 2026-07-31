@@ -41,10 +41,10 @@ app = Dash(__name__)
 
 mgr = BucketUploadManager(
     app,
-    endpoint_url = 'http://localhost:9000',   # omit for real AWS S3
-    aws_access_key_id = 'minioadmin',
-    aws_secret_access_key = 'minioadmin',
-    region_name = 'us-east-1',
+    endpoint_url = 'http://localhost:9000',   # any S3-compatible store; omit for AWS S3
+    access_key = 'minioadmin',
+    secret_key = 'minioadmin',
+    region = 'us-east-1',
     bucket = 'uploads',
     prefix = 'incoming',
     mode = 'direct',                          # or 'relay'
@@ -72,6 +72,27 @@ Try it locally with MinIO:
 docker compose -f examples/docker-compose.minio.yml up -d
 uv run python examples/direct_mode.py
 ```
+
+## S3-compatible stores
+
+The manager speaks the S3 protocol (via boto3 as a protocol library), not
+"AWS": point `endpoint_url` at any S3-compatible store and pass its
+access/secret key pair using the provider-neutral parameter names
+(`access_key`, `secret_key`, `session_token`, `region`,
+`addressing_style`). The boto3 spellings (`aws_access_key_id`, …) are
+accepted as aliases. `bucket` is a Swift *container* / GCS *bucket* /
+Ceph *bucket* — same concept everywhere.
+
+| Store | Setup notes |
+|---|---|
+| AWS S3 | Omit `endpoint_url`; omit credentials to use the normal AWS chain (env vars, config files, instance/IRSA roles). |
+| MinIO | `endpoint_url='http(s)://minio:9000'` + root or service-account keys. Path-style addressing is applied automatically. |
+| Ceph RGW | `endpoint_url` at the RGW endpoint + S3 keys from `radosgw-admin user create`. |
+| OpenStack Swift (s3api middleware) | `endpoint_url` at the Swift proxy's S3 endpoint; credentials are Keystone EC2-style: `openstack ec2 credentials create` → pass the resulting access/secret pair. `region` should match the Keystone region if SigV4 validation is strict (often `RegionOne`). Multipart uploads are backed by SLO segments and honor the same ≥5 MiB part rule. For direct mode, CORS lives on the container: `swift post uploads -H 'X-Container-Meta-Access-Control-Allow-Origin: https://your-app' -H 'X-Container-Meta-Access-Control-Expose-Headers: etag'`. |
+| Anything else | If `mc`/`aws s3api` works against it, this does too. `addressing_style='virtual'` for stores behind wildcard DNS; `signature_version` and `botocore_config` are escape hatches for exotic setups. |
+
+Relay mode is the lowest-friction path on stores where you can't (or don't
+want to) configure CORS — the browser never talks to the store directly.
 
 ## Choosing a transport
 

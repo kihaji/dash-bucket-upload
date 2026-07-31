@@ -18,9 +18,9 @@ app = Dash(__name__)
 mgr = BucketUploadManager(
     app,
     endpoint_url = 'http://localhost:9000',
-    region_name = 'us-east-1',
-    aws_access_key_id = 'minioadmin',
-    aws_secret_access_key = 'minioadmin',
+    region = 'us-east-1',
+    access_key = 'minioadmin',
+    secret_key = 'minioadmin',
     bucket = 'uploads',
     prefix = 'relayed',
     mode = 'relay',

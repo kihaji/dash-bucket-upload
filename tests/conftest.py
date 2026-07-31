@@ -54,9 +54,9 @@ def s3(moto_endpoint):
 def make_manager(flask_app, moto_endpoint, **kwargs):
     defaults = dict(
         endpoint_url = moto_endpoint,
-        region_name = REGION,
-        aws_access_key_id = ACCESS_KEY,
-        aws_secret_access_key = SECRET_KEY,
+        region = REGION,
+        access_key = ACCESS_KEY,
+        secret_key = SECRET_KEY,
         bucket = BUCKET,
         prefix = 'incoming',
     )

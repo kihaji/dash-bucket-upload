@@ -21,7 +21,11 @@ PyPI: `dash-bucket-upload`, import: `dash_bucket_upload`, component: `BucketUplo
   key against the config's prefix pattern (`_keys.key_matches`) instead of a
   server-side registry — keep it that way (gunicorn multi-worker safety).
 - `dash_bucket_upload/component.py` — hand-written wrapper (snake_case props,
-  `manager=` wiring). `BucketUpload.py`, `_imports_.py`, `metadata.json`,
+  `manager=` wiring).
+- Connection params are provider-neutral (`access_key`, `secret_key`,
+  `session_token`, `region`, `addressing_style`, `signature_version`) with
+  boto3-flavored aliases (`aws_access_key_id`, …) resolved by `_pick()` in
+  manager.py — keep new docs/examples on the neutral names. `BucketUpload.py`, `_imports_.py`, `metadata.json`,
   `package-info.json` are generated — never edit.
 - Part-size constants are mirrored in `_keys.py` and `partSize.js`; change both.
 - S3 rules the code honors: parts except the last must be ≥5 MiB; ≤10,000

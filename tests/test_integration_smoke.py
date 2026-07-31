@@ -26,9 +26,9 @@ def test_upload_via_browser(dash_duo, s3, moto_endpoint, tmp_path):
     mgr = BucketUploadManager(
         app,
         endpoint_url = moto_endpoint,
-        region_name = REGION,
-        aws_access_key_id = ACCESS_KEY,
-        aws_secret_access_key = SECRET_KEY,
+        region = REGION,
+        access_key = ACCESS_KEY,
+        secret_key = SECRET_KEY,
         bucket = BUCKET,
         prefix = 'smoke',
         mode = 'relay',

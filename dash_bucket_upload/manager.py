@@ -30,6 +30,13 @@ _RELAY_READ_CHUNK = 1 * MiB
 _RELAY_SPOOL_MAX = 8 * MiB
 
 
+def _pick(neutral_name: str, neutral: Any, alias_name: str, alias: Any) -> Any:
+    """Resolve a neutral parameter against its boto3-flavored alias."""
+    if neutral is not None and alias is not None:
+        raise ValueError(f'pass either {neutral_name}= or {alias_name}=, not both')
+    return neutral if neutral is not None else alias
+
+
 @dataclass(frozen = True)
 class UploadConfig:
     """Configuration for one widget instance (one `upload_id`)."""
@@ -46,14 +53,26 @@ class UploadConfig:
 
 class BucketUploadManager:
     """Registers the widget's upload routes on a Dash (or Flask) app and holds
-    the S3 client plus per-widget `UploadConfig`s.
+    the object-store client plus per-widget `UploadConfig`s.
 
-    Example:
+    Works with any S3-compatible store: AWS S3 (leave `endpoint_url` unset),
+    MinIO, Ceph RGW, OpenStack Swift with the s3api middleware, and so on —
+    point `endpoint_url` at the store and pass its access/secret key pair.
+
+    Example (MinIO; identical shape for any other store):
         >>> app = Dash(__name__)
         >>> mgr = BucketUploadManager(app, endpoint_url='http://localhost:9000',
-        ...                           aws_access_key_id='minio', aws_secret_access_key='minio123',
+        ...                           access_key='minio', secret_key='minio123',
         ...                           bucket='uploads', prefix='incoming')
         >>> layout = BucketUpload(id='up', manager=mgr)
+
+    Connection parameters use provider-neutral names (`access_key`,
+    `secret_key`, `session_token`, `region`, `addressing_style`); the
+    boto3-flavored spellings (`aws_access_key_id`, `aws_secret_access_key`,
+    `aws_session_token`, `region_name`) are accepted as aliases. When no
+    credentials are given at all, boto3's normal resolution chain runs
+    (environment, shared config, instance/IRSA roles), which is usually what
+    you want on AWS.
 
     Security note: the routes are open by default. In production, pass
     `auth_check` (e.g. `lambda r: current_user.is_authenticated`) and set
@@ -65,6 +84,13 @@ class BucketUploadManager:
         app: Any,
         *,
         endpoint_url: str | None = None,
+        region: str | None = None,
+        access_key: str | None = None,
+        secret_key: str | None = None,
+        session_token: str | None = None,
+        addressing_style: Literal['path', 'virtual', 'auto'] | None = None,
+        signature_version: str = 's3v4',
+        # boto3-flavored aliases for the four connection parameters above
         region_name: str | None = None,
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
@@ -94,10 +120,12 @@ class BucketUploadManager:
             from ._s3 import build_s3_client
             self._s3 = build_s3_client(
                 endpoint_url = endpoint_url,
-                region_name = region_name,
-                aws_access_key_id = aws_access_key_id,
-                aws_secret_access_key = aws_secret_access_key,
-                aws_session_token = aws_session_token,
+                region = _pick('region', region, 'region_name', region_name),
+                access_key = _pick('access_key', access_key, 'aws_access_key_id', aws_access_key_id),
+                secret_key = _pick('secret_key', secret_key, 'aws_secret_access_key', aws_secret_access_key),
+                session_token = _pick('session_token', session_token, 'aws_session_token', aws_session_token),
+                addressing_style = addressing_style,
+                signature_version = signature_version,
                 boto3_session = boto3_session,
                 botocore_config = botocore_config,
             )

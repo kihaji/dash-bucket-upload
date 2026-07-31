@@ -64,6 +64,47 @@ def test_manager_accepts_dash_app(moto_endpoint):
     assert mgr.url_prefix == '/dash-bucket-upload'
 
 
+def test_boto3_flavored_aliases_still_work(flask_app, moto_endpoint):
+    from .conftest import ACCESS_KEY, BUCKET, REGION, SECRET_KEY
+    mgr = BucketUploadManager(
+        flask_app,
+        endpoint_url = moto_endpoint,
+        region_name = REGION,
+        aws_access_key_id = ACCESS_KEY,
+        aws_secret_access_key = SECRET_KEY,
+        bucket = BUCKET,
+    )
+    creds = mgr._s3._request_signer._credentials
+    assert creds.access_key == ACCESS_KEY
+    assert mgr._s3.meta.region_name == REGION
+
+
+def test_neutral_and_alias_together_is_an_error(flask_app, moto_endpoint):
+    with pytest.raises(ValueError, match = 'access_key'):
+        BucketUploadManager(
+            flask_app,
+            endpoint_url = moto_endpoint,
+            access_key = 'a',
+            aws_access_key_id = 'b',
+            secret_key = 's',
+            bucket = 'bkt',
+        )
+
+
+def test_addressing_style_and_signature_version_pass_through(flask_app, moto_endpoint):
+    from .conftest import ACCESS_KEY, BUCKET, SECRET_KEY
+    mgr = BucketUploadManager(
+        flask_app,
+        endpoint_url = moto_endpoint,
+        access_key = ACCESS_KEY,
+        secret_key = SECRET_KEY,
+        bucket = BUCKET,
+        addressing_style = 'virtual',
+    )
+    assert mgr._s3.meta.config.s3['addressing_style'] == 'virtual'
+    assert mgr._s3.meta.config.signature_version == 's3v4'
+
+
 def test_malformed_json_is_a_clean_400(flask_app, moto_endpoint):
     make_manager(flask_app, moto_endpoint)
     client = flask_app.test_client()

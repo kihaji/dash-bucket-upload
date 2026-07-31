@@ -12,7 +12,7 @@ Example:
     >>>
     >>> app = Dash(__name__)
     >>> mgr = BucketUploadManager(app, endpoint_url='http://localhost:9000',
-    ...                           aws_access_key_id='minio', aws_secret_access_key='minio123',
+    ...                           access_key='minio', secret_key='minio123',
     ...                           bucket='uploads', prefix='incoming')
     >>> app.layout = BucketUpload(id='up', manager=mgr)
 """
