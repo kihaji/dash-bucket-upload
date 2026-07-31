@@ -2,6 +2,7 @@
 ### Webpack
 .build_cache
 ### VisualStudioCode template
+.vscode
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
@@ -290,3 +291,5 @@ JuliaManifest.toml
 dash_bucket_upload/dash_bucket_upload.min.js
 dash_bucket_upload/dash_bucket_upload.min.js.map
 dash_bucket_upload/dash_bucket_upload.min.js.LICENSE.txt
+
+.ruff_cache
