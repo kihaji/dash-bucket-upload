@@ -1,0 +1,101 @@
+"""BucketUpload component wrapper: snake_case kwargs and manager wiring."""
+from __future__ import annotations
+
+from typing import Any, Optional, Sequence
+
+from .BucketUpload import BucketUpload as _BucketUploadBase
+from .manager import BucketUploadManager
+
+# Re-export the base component so __init__.py doesn't need to import from
+# .BucketUpload directly, which causes Pyright to shadow the class with the
+# BucketUpload.py module name.
+BucketUploadBase = _BucketUploadBase
+
+
+def _accept_from_extensions(extensions: Sequence[str] | None) -> str | None:
+    if not extensions:
+        return None
+    return ','.join(e if e.startswith('.') else f'.{e}' for e in extensions)
+
+
+class BucketUpload(_BucketUploadBase):
+    """Drop-zone upload component that stores files in an S3-compatible bucket.
+
+    Pass the `manager` (a BucketUploadManager registered on the app) and the
+    component wires itself to the server routes; `upload_id` selects which
+    registered configuration (bucket/prefix/mode/limits) this widget uses.
+
+    Callback-facing props:
+        lastUploadedBatch -- fires once per completed drop/selection batch with
+            the new files: [{bucket, key, filename, size, etag, status}]
+        uploadedFiles -- same shape, cumulative across the component lifetime
+        isUploading -- True while any file is in flight
+        progress -- per-file progress for custom UI (throttled)
+        lastError -- {filename, message, phase} for the latest failure
+
+    Example:
+        >>> mgr = BucketUploadManager(app, endpoint_url='http://localhost:9000',
+        ...                           bucket='uploads')
+        >>> BucketUpload(id='up', manager=mgr)
+    """
+
+    def __init__(
+        self,
+        id: Optional[str] = None,  # noqa: A002 - matches Dash convention
+        *,
+        manager: BucketUploadManager | None = None,
+        upload_id: str = 'default',
+        api_path: str | None = None,
+        multiple: bool = True,
+        accept: str | None = None,
+        max_file_size: int | None = None,
+        disabled: bool = False,
+        max_concurrency: int | None = None,
+        show_file_list: bool = True,
+        style: dict | None = None,
+        class_name: str | None = None,
+        style_active: dict | None = None,
+        style_disabled: dict | None = None,
+        children: Any = None,
+        **kwargs: Any,
+    ):
+        if manager is not None:
+            cfg = manager.get_config(upload_id)  # raises early on unknown upload_id
+            api_path = api_path or manager.url_prefix
+            # Mirror server limits client-side for immediate feedback; the
+            # server enforces them regardless.
+            if max_file_size is None:
+                max_file_size = cfg.max_file_size
+            if accept is None:
+                accept = _accept_from_extensions(cfg.allowed_extensions)
+        elif api_path is None:
+            raise ValueError('provide either manager= or api_path=')
+
+        props: dict[str, Any] = {
+            'uploadId': upload_id,
+            'apiPath': api_path,
+            'multiple': multiple,
+            'disabled': disabled,
+            'showFileList': show_file_list,
+        }
+        if id is not None:
+            props['id'] = id
+        if accept is not None:
+            props['accept'] = accept
+        if max_file_size is not None:
+            props['maxFileSize'] = max_file_size
+        if max_concurrency is not None:
+            props['maxConcurrency'] = max_concurrency
+        if style is not None:
+            props['style'] = style
+        if class_name is not None:
+            props['className'] = class_name
+        if style_active is not None:
+            props['styleActive'] = style_active
+        if style_disabled is not None:
+            props['styleDisabled'] = style_disabled
+        if children is not None:
+            props['children'] = children
+        props.update(kwargs)
+
+        super().__init__(**props)

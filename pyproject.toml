@@ -1,0 +1,89 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dash-bucket-upload"
+version = "0.1.0"
+description = "Large-file upload component for Plotly Dash that stores files in an S3-compatible bucket"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Scott Lemke", email = "scott.r.lemke@gmail.com" }]
+keywords = ["dash", "plotly", "upload", "s3", "minio", "multipart"]
+dependencies = [
+    "dash>=3.0.0,<5",
+    "boto3>=1.34",
+]
+classifiers = [
+    "Framework :: Dash",
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Internet :: WWW/HTTP :: Dynamic Content",
+]
+
+[project.urls]
+Homepage = "https://github.com/slemke/dash-bucket-upload"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.0,<10",
+    "dash[testing]>=3.4,<4",
+    "selenium>=4.1,<4.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.20",
+    "moto[server]>=5.0",
+    "requests>=2.31",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.hatch.build.hooks.custom]
+path = "hatch_build.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dash_bucket_upload"]
+artifacts = [
+    "dash_bucket_upload/dash_bucket_upload.min.js",
+    "dash_bucket_upload/dash_bucket_upload.min.js.LICENSE.txt",
+]
+exclude = ["dash_bucket_upload/*.map"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "dash_bucket_upload",
+    "src/lib",
+    "package.json",
+    "package-lock.json",
+    "webpack.config.js",
+    ".babelrc",
+    "hatch_build.py",
+    "_validate_init.py",
+    "README.md",
+    "LICENSE",
+]
+exclude = [
+    "dash_bucket_upload/*.map",
+    "dash_bucket_upload/dash_bucket_upload.min.js",
+    "dash_bucket_upload/dash_bucket_upload.min.js.LICENSE.txt",
+]
+
+[tool.ruff]
+line-length = 150
+target-version = "py312"
+extend-exclude = ["dash_bucket_upload/BucketUpload.py", "dash_bucket_upload/_imports_.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "SIM"]
+ignore = ["E251", "E252", "E741", "SIM108"]
+
+[tool.pyright]
+include = ["dash_bucket_upload", "examples"]
+typeCheckingMode = "basic"
+pythonVersion = "3.12"
+venvPath = "."
+venv = ".venv"
