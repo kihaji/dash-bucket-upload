@@ -25,6 +25,9 @@ nothing else.
   presigned-URL refresh on expiry, cancellation with server-side multipart
   abort, throttled progress reporting.
 
+**Documentation: <https://kihaji.github.io/dash-bucket-upload/>** — guides,
+full API reference, and [troubleshooting](https://kihaji.github.io/dash-bucket-upload/guide/troubleshooting/).
+
 ## Installation
 
 ```bash
@@ -205,6 +208,7 @@ uv sync                # Python env (.venv)
 npm test               # vitest (JS engine)
 uv run pytest          # Python suite (moto-backed, no Docker needed)
 make quality           # ruff + pyright
+make docs-serve        # live-reloading docs site at http://127.0.0.1:8000
 ```
 
 The wheel is self-building: `uv build` compiles the JS bundle via a hatchling

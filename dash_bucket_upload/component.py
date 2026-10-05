@@ -25,18 +25,51 @@ class BucketUpload(_BucketUploadBase):
     component wires itself to the server routes; `upload_id` selects which
     registered configuration (bucket/prefix/mode/limits) this widget uses.
 
-    Callback-facing props:
-        lastUploadedBatch -- fires once per completed drop/selection batch with
-            the new files: [{bucket, key, filename, size, etag, status}]
-        uploadedFiles -- same shape, cumulative across the component lifetime
-        isUploading -- True while any file is in flight
-        progress -- per-file progress for custom UI (throttled)
-        lastError -- {filename, message, phase} for the latest failure
+    Callback-facing props (read-only outputs, camelCase as in any Dash
+    component):
 
-    Example:
+    - `lastUploadedBatch`: fires once per completed drop/selection batch with
+      the new files, `[{bucket, key, filename, size, etag, status}]`.
+    - `uploadedFiles`: same shape, cumulative across the component lifetime.
+    - `isUploading`: `True` while any file is in flight.
+    - `progress`: per-file progress for custom UI (throttled).
+    - `lastError`: `{filename, message, phase}` for the latest failure.
+
+    Examples:
         >>> mgr = BucketUploadManager(app, endpoint_url='http://localhost:9000',
         ...                           bucket='uploads')
         >>> BucketUpload(id='up', manager=mgr)
+
+    Args:
+        id: Component ID for callbacks.
+        manager: The app's `BucketUploadManager`. Sets `api_path` and mirrors
+            the config's `max_file_size` and `allowed_extensions` client-side.
+        upload_id: Name of the registered config to use.
+        api_path: Base URL of the routes. Only needed without `manager=`, for
+            example when the layout is built in a process that has no manager.
+        multiple: Allow more than one file per drop or selection.
+        accept: File-picker filter such as `'.csv,.parquet'` or `'image/*'`.
+            Defaults to the config's `allowed_extensions`.
+        max_file_size: Client-side size limit in bytes. Defaults to the
+            config's `max_file_size`. The server enforces its own limit
+            regardless.
+        disabled: Disable the drop zone and file picker.
+        max_concurrency: Maximum part uploads in flight across all files
+            (default 6; at most 4 per file).
+        show_file_list: Show the built-in progress list. Set `False` to build
+            your own from the `progress` prop.
+        style: Style of the drop zone.
+        class_name: CSS class of the drop zone.
+        style_active: Extra style while files are dragged over the drop zone.
+        style_disabled: Extra style while disabled.
+        children: Custom drop-zone content (replaces "Drag and Drop or Select
+            Files").
+        **kwargs: Passed through to the generated base component (camelCase
+            prop names).
+
+    Raises:
+        ValueError: Neither `manager` nor `api_path` was given.
+        KeyError: `upload_id` is not registered on `manager`.
     """
 
     def __init__(

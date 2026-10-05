@@ -6,6 +6,8 @@
 #   make clean    - Remove build artifacts
 #   make release VERSION=x.y.z - Verify clean tree + version consistency and tag for release
 #   make check-versions [VERSION=x.y.z] - Verify all version sources agree (and match VERSION if given)
+#   make docs      - Build the docs site (strict)
+#   make docs-serve - Serve the docs with live reload
 #
 
 
@@ -42,6 +44,16 @@ quality:
 	uv run npx pyright
 	@echo ""
 	@echo "Quality check complete."
+
+.PHONY: docs docs-serve
+
+# Build the documentation site strictly (as CI does) into site/
+docs:
+	uv run --only-group docs mkdocs build --strict
+
+# Serve the documentation with live reload at http://127.0.0.1:8000
+docs-serve:
+	uv run --only-group docs mkdocs serve
 
 # Check if git working directory is clean
 check-git:
