@@ -111,3 +111,58 @@ def test_malformed_json_is_a_clean_400(flask_app, moto_endpoint):
     resp = client.post('/dash-bucket-upload/create', data = 'not json', content_type = 'application/json')
     assert resp.status_code == 400
     assert 'error' in resp.get_json()
+
+
+def _create(client, upload_id = 'default'):
+    return client.post('/dash-bucket-upload/create', json = {'uploadId': upload_id, 'filename': 'a.txt', 'size': 10})
+
+
+def test_bucket_error_is_502_and_logged(flask_app, s3, moto_endpoint, caplog):
+    mgr = make_manager(flask_app, moto_endpoint)
+    mgr.register('missing', bucket = 'no-such-bucket-for-tests')
+    with caplog.at_level('WARNING', logger = 'dash_bucket_upload.manager'):
+        resp = _create(flask_app.test_client(), 'missing')
+    assert resp.status_code == 502
+    assert resp.get_json() == {'error': 'bucket operation failed: NoSuchBucket'}
+    assert 'CreateMultipartUpload' in caplog.text
+    assert 'bucket does not exist' in caplog.text   # store's full message reaches the log only
+
+
+def test_unreachable_endpoint_is_clean_502(flask_app, caplog):
+    import socket
+    with socket.socket() as sock:   # grab a port nothing is listening on
+        sock.bind(('127.0.0.1', 0))
+        port = sock.getsockname()[1]
+    from botocore.config import Config
+    make_manager(flask_app, f'http://127.0.0.1:{port}', botocore_config = Config(retries = {'total_max_attempts': 1}))
+    with caplog.at_level('ERROR', logger = 'dash_bucket_upload.manager'):
+        resp = _create(flask_app.test_client())
+    assert resp.status_code == 502
+    assert resp.get_json() == {'error': 'bucket request failed: EndpointConnectionError'}
+    assert 'EndpointConnectionError' in caplog.text
+
+
+def test_store_timeout_is_504(flask_app):
+    from botocore.exceptions import ConnectTimeoutError
+
+    class TimingOutClient:
+        def create_multipart_upload(self, **_):
+            raise ConnectTimeoutError(endpoint_url = 'http://store.invalid')
+
+    BucketUploadManager(flask_app, s3_client = TimingOutClient(), bucket = 'b')
+    resp = _create(flask_app.test_client())
+    assert resp.status_code == 504
+    assert resp.get_json() == {'error': 'bucket request failed: ConnectTimeoutError'}
+
+
+def test_client_fails_fast_by_default(flask_app, moto_endpoint):
+    from dash_bucket_upload._s3 import CONNECT_TIMEOUT, MAX_ATTEMPTS
+    mgr = make_manager(flask_app, moto_endpoint)
+    assert mgr._s3.meta.config.connect_timeout == CONNECT_TIMEOUT
+    assert mgr._s3.meta.config.retries['total_max_attempts'] == MAX_ATTEMPTS
+
+
+def test_botocore_config_overrides_timeouts(flask_app, moto_endpoint):
+    from botocore.config import Config
+    mgr = make_manager(flask_app, moto_endpoint, botocore_config = Config(connect_timeout = 30))
+    assert mgr._s3.meta.config.connect_timeout == 30

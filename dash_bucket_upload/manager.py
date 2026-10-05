@@ -9,6 +9,7 @@ this widget's key generator produces for its configured prefix.
 """
 from __future__ import annotations
 
+import logging
 import posixpath
 import tempfile
 from collections.abc import Callable, Sequence
@@ -16,7 +17,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Literal
 
 import flask
-from botocore.exceptions import ClientError
+from botocore.exceptions import BotoCoreError, ClientError, ConnectTimeoutError, ReadTimeoutError
 
 from ._keys import MAX_PART, MiB, compute_part_size, generate_key, key_matches
 from ._validation import UploadValidationError, validate_upload
@@ -24,6 +25,8 @@ from ._validation import UploadValidationError, validate_upload
 if TYPE_CHECKING:
     from botocore.client import BaseClient
     from botocore.config import Config
+
+logger = logging.getLogger(__name__)
 
 SIGN_BATCH_MAX = 100
 _RELAY_READ_CHUNK = 1 * MiB
@@ -39,7 +42,31 @@ def _pick(neutral_name: str, neutral: Any, alias_name: str, alias: Any) -> Any:
 
 @dataclass(frozen = True)
 class UploadConfig:
-    """Configuration for one widget instance (one `upload_id`)."""
+    """Configuration for one widget instance (one `upload_id`).
+
+    Created by `BucketUploadManager` (the manager-level defaults become the
+    `'default'` config) and by `BucketUploadManager.register`. Frozen: to change
+    a config, register it again.
+
+    Attributes:
+        upload_id: Name the component refers to via `upload_id=`.
+        bucket: Target bucket (a container on Swift).
+        prefix: Key prefix; objects land at `<prefix>/<uuid4>/<filename>`.
+        mode: `'direct'` (browser → bucket via presigned URLs) or `'relay'`
+            (browser → Dash server → bucket).
+        max_file_size: Maximum file size in bytes, enforced server-side
+            (HTTP 413) and mirrored client-side. `None` means unlimited.
+        allowed_extensions: Allowed filename extensions such as `['.csv']`
+            (leading dot optional, case-insensitive). `None` allows any.
+        allowed_mime_types: Allowed browser-reported MIME types. `None`
+            allows any. Browsers report what the OS guesses from the
+            extension, so treat this as a convenience, not a security control.
+        part_size: Fixed multipart part size in bytes. `None` picks one
+            automatically (16 MiB minimum, grown to stay under 10,000 parts).
+            Must be at least 5 MiB.
+        presign_expiration: Lifetime of presigned part URLs in seconds
+            (direct mode). Expired URLs are refreshed automatically.
+    """
     upload_id: str
     bucket: str
     prefix: str = ''
@@ -52,31 +79,74 @@ class UploadConfig:
 
 
 class BucketUploadManager:
-    """Registers the widget's upload routes on a Dash (or Flask) app and holds
-    the object-store client plus per-widget `UploadConfig`s.
+    """Registers the upload routes on a Dash (or Flask) app and holds the
+    object-store client plus the per-widget `UploadConfig`s.
 
     Works with any S3-compatible store: AWS S3 (leave `endpoint_url` unset),
-    MinIO, Ceph RGW, OpenStack Swift with the s3api middleware, and so on —
-    point `endpoint_url` at the store and pass its access/secret key pair.
+    MinIO, Ceph RGW, OpenStack Swift with the s3api middleware, and so on.
+    Point `endpoint_url` at the store and pass its access/secret key pair.
 
-    Example (MinIO; identical shape for any other store):
+    Construct it once, at import time, before the app starts serving: the
+    routes are a Flask blueprint, and Flask refuses new blueprints after the
+    first request.
+
+    Examples:
         >>> app = Dash(__name__)
         >>> mgr = BucketUploadManager(app, endpoint_url='http://localhost:9000',
         ...                           access_key='minio', secret_key='minio123',
         ...                           bucket='uploads', prefix='incoming')
         >>> layout = BucketUpload(id='up', manager=mgr)
 
-    Connection parameters use provider-neutral names (`access_key`,
-    `secret_key`, `session_token`, `region`, `addressing_style`); the
-    boto3-flavored spellings (`aws_access_key_id`, `aws_secret_access_key`,
-    `aws_session_token`, `region_name`) are accepted as aliases. When no
-    credentials are given at all, boto3's normal resolution chain runs
-    (environment, shared config, instance/IRSA roles), which is usually what
-    you want on AWS.
+    Args:
+        app: The `dash.Dash` app (or a bare `flask.Flask` server) to mount the
+            routes on.
+        endpoint_url: URL of the S3-compatible endpoint, e.g.
+            `'http://minio:9000'`. Leave unset for AWS S3.
+        region: Signing region. Required by AWS; other stores usually accept
+            any value (`'us-east-1'` is a safe default). Alias: `region_name`.
+        access_key: Access key ID. Alias: `aws_access_key_id`. When no
+            credentials are given at all, boto3's normal resolution chain runs
+            (environment, shared config files, instance/IRSA roles).
+        secret_key: Secret access key. Alias: `aws_secret_access_key`.
+        session_token: Session token for temporary credentials. Alias:
+            `aws_session_token`.
+        addressing_style: `'path'`, `'virtual'` or `'auto'`. Defaults to
+            `'path'` when `endpoint_url` is set (self-hosted stores rarely have
+            wildcard DNS), otherwise boto3's default.
+        signature_version: Request signing version. Presigned URLs need SigV4
+            (`'s3v4'`) on every current store.
+        region_name: boto3-flavored alias of `region`.
+        aws_access_key_id: boto3-flavored alias of `access_key`.
+        aws_secret_access_key: boto3-flavored alias of `secret_key`.
+        aws_session_token: boto3-flavored alias of `session_token`.
+        boto3_session: A `boto3.Session` to build the client from instead of
+            the credential parameters (e.g. one using a named profile).
+        botocore_config: A `botocore.config.Config` merged over the defaults
+            (it wins). Use it to tune timeouts, retries, proxies or TLS.
+        s3_client: A ready-made boto3 S3 client. Overrides every connection
+            parameter above.
+        bucket: Bucket for the `'default'` upload config. When omitted, no
+            `'default'` config exists and every widget needs a `register()`ed
+            config of its own.
+        prefix: Default key prefix.
+        mode: Default transport, `'direct'` or `'relay'`.
+        max_file_size: Default maximum file size in bytes.
+        allowed_extensions: Default extension allowlist.
+        allowed_mime_types: Default MIME type allowlist.
+        part_size: Default fixed part size in bytes (`None` = automatic).
+        presign_expiration: Default presigned-URL lifetime in seconds.
+        url_prefix: URL path the routes are mounted under. Each manager on one
+            app needs its own.
+        auth_check: Called with the `flask.Request` before every route; return
+            `False` to reject with HTTP 403. The routes are open without it.
+        key_generator: `(config, sanitized_filename) -> key` replacement for
+            the default `<prefix>/<uuid4>/<filename>` scheme. Generated keys
+            must still match that shape, because the stateless routes check
+            every later request against it.
 
-    Security note: the routes are open by default. In production, pass
-    `auth_check` (e.g. `lambda r: current_user.is_authenticated`) and set
-    `max_file_size` / `allowed_extensions`.
+    Raises:
+        TypeError: `app` is neither a Dash nor a Flask app.
+        ValueError: A neutral parameter and its alias were both given.
     """
 
     def __init__(
@@ -154,6 +224,7 @@ class BucketUploadManager:
 
     @property
     def url_prefix(self) -> str:
+        """URL path the routes are mounted under (no trailing slash)."""
         return self._url_prefix
 
     def register(
@@ -170,7 +241,33 @@ class BucketUploadManager:
         presign_expiration: int | None = None,
     ) -> UploadConfig:
         """Register a named per-widget config; unset fields fall back to the
-        manager-level defaults."""
+        manager-level defaults.
+
+        Registering an existing name replaces it. Call this before building any
+        layout that uses the name, because `BucketUpload(manager=...)` looks
+        the config up when it is constructed.
+
+        Examples:
+            >>> mgr.register('videos', bucket='media', prefix='video', mode='relay',
+            ...              max_file_size=10 * 2**30, allowed_extensions=['.mp4'])
+
+        Args:
+            upload_id: Name the component selects with `upload_id=`.
+            bucket: Target bucket.
+            prefix: Key prefix.
+            mode: `'direct'` or `'relay'`.
+            max_file_size: Maximum file size in bytes.
+            allowed_extensions: Extension allowlist.
+            allowed_mime_types: MIME type allowlist.
+            part_size: Fixed part size in bytes.
+            presign_expiration: Presigned-URL lifetime in seconds.
+
+        Returns:
+            The stored config.
+
+        Raises:
+            ValueError: Neither this call nor the manager sets a bucket.
+        """
         overrides = {
             key: value for key, value in {
                 'bucket': bucket,
@@ -190,6 +287,11 @@ class BucketUploadManager:
         return cfg
 
     def get_config(self, upload_id: str) -> UploadConfig:
+        """Return the config registered under `upload_id`.
+
+        Raises:
+            KeyError: No config by that name; the message lists the known names.
+        """
         try:
             return self._configs[upload_id]
         except KeyError:
@@ -214,6 +316,7 @@ class BucketUploadManager:
         bp.post('/abort')(self._route_abort)
         bp.register_error_handler(UploadValidationError, self._handle_validation_error)
         bp.register_error_handler(ClientError, self._handle_client_error)
+        bp.register_error_handler(BotoCoreError, self._handle_botocore_error)
 
         server.register_blueprint(bp)
 
@@ -228,8 +331,21 @@ class BucketUploadManager:
 
     @staticmethod
     def _handle_client_error(err: ClientError):
+        # The store answered with an error. Only the code goes to the browser;
+        # the full message (which can name buckets/ARNs) stays in the server log.
         code = err.response.get('Error', {}).get('Code', 'S3Error')
+        logger.warning('dash-bucket-upload: %s %s: %s', flask.request.path, err.operation_name, err)
         return flask.jsonify({'error': f'bucket operation failed: {code}'}), 502
+
+    @staticmethod
+    def _handle_botocore_error(err: BotoCoreError):
+        # Client-side failures: unreachable endpoint, TLS, timeouts, missing
+        # credentials. Without this they surface as a bare 500 (or, after
+        # botocore's retries, a reverse-proxy 502 the operator can't trace).
+        name = type(err).__name__
+        logger.error('dash-bucket-upload: %s: %s: %s', flask.request.path, name, err)
+        status = 504 if isinstance(err, (ConnectTimeoutError, ReadTimeoutError)) else 502
+        return flask.jsonify({'error': f'bucket request failed: {name}'}), status
 
     def _json_body(self) -> dict:
         body = flask.request.get_json(silent = True)
