@@ -1,6 +1,6 @@
 {
   "name": "dash_bucket_upload",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Large-file upload component for Plotly Dash that stores files in an S3-compatible bucket",
   "main": "build/index.js",
   "scripts": {
