@@ -79,6 +79,7 @@ plugins:
           options:
             docstring_style: google
             show_root_heading: true
+            show_root_full_path: false   # headings read as the root-level import names
             show_source: false
             show_signature_annotations: true
             separate_signature: true

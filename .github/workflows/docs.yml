@@ -30,7 +30,9 @@ jobs:
       # mkdocstrings reads the Python sources statically, so only the docs
       # group is installed: no project install, no npm/JS bundle build.
       - name: Build site
-        run: uv run --only-group docs mkdocs build --strict
+        run: |
+          uv run --only-group docs python scripts/check_docs_api.py
+          uv run --only-group docs mkdocs build --strict
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

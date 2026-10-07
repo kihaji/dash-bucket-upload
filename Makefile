@@ -49,6 +49,7 @@ quality:
 
 # Build the documentation site strictly (as CI does) into site/
 docs:
+	uv run --only-group docs python scripts/check_docs_api.py
 	uv run --only-group docs mkdocs build --strict
 
 # Serve the documentation with live reload at http://127.0.0.1:8000

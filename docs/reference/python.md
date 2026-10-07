@@ -15,7 +15,11 @@ You only need it in code that builds layouts without a manager; see
 
 ::: dash_bucket_upload.UploadConfig
 
-::: dash_bucket_upload.BucketUpload
+<!-- Not dash_bucket_upload.BucketUpload: statically that path is the generated
+     BucketUpload.py *module* (the runtime import rebinds it to the class), so
+     mkdocstrings would render an empty module. -->
+::: dash_bucket_upload.component.BucketUpload
     options:
       members: false
       inherited_members: false
+      show_bases: false

@@ -150,4 +150,6 @@ jobs:
           python-version: '3.12'
 
       - name: Build docs
-        run: uv run --only-group docs mkdocs build --strict
+        run: |
+          uv run --only-group docs python scripts/check_docs_api.py
+          uv run --only-group docs mkdocs build --strict
