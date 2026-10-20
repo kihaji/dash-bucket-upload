@@ -77,6 +77,14 @@ Keyword arguments:
     ~4 updates/second. Intended for custom progress UI, not as a
     general callback trigger.
 
+- resetKey (string | number; optional):
+    Change this to any new value to reset the component to its initial
+    state: in-flight uploads are cancelled, the file list is cleared,
+    and uploadedFiles, lastUploadedBatch, progress and lastError
+    return to None (isUploading to False). Objects already uploaded to
+    the bucket are not touched. From Python, return
+    `BucketUpload.reset()` to this prop.
+
 - showFileList (boolean; default True):
     Show the built-in per-file progress list under the drop zone. Set
     False to build custom progress UI from the `progress` prop.
@@ -119,6 +127,7 @@ Keyword arguments:
         className: typing.Optional[str] = None,
         styleActive: typing.Optional[dict] = None,
         styleDisabled: typing.Optional[dict] = None,
+        resetKey: typing.Optional[typing.Union[str, NumberType]] = None,
         uploadedFiles: typing.Optional[typing.Sequence[dict]] = None,
         lastUploadedBatch: typing.Optional[typing.Sequence[dict]] = None,
         isUploading: typing.Optional[bool] = None,
@@ -126,9 +135,9 @@ Keyword arguments:
         lastError: typing.Optional[dict] = None,
         **kwargs
     ):
-        self._prop_names = ['children', 'id', 'accept', 'apiPath', 'className', 'disabled', 'isUploading', 'lastError', 'lastUploadedBatch', 'maxConcurrency', 'maxFileSize', 'multiple', 'progress', 'showFileList', 'style', 'styleActive', 'styleDisabled', 'uploadId', 'uploadedFiles']
+        self._prop_names = ['children', 'id', 'accept', 'apiPath', 'className', 'disabled', 'isUploading', 'lastError', 'lastUploadedBatch', 'maxConcurrency', 'maxFileSize', 'multiple', 'progress', 'resetKey', 'showFileList', 'style', 'styleActive', 'styleDisabled', 'uploadId', 'uploadedFiles']
         self._valid_wildcard_attributes =            []
-        self.available_properties = ['children', 'id', 'accept', 'apiPath', 'className', 'disabled', 'isUploading', 'lastError', 'lastUploadedBatch', 'maxConcurrency', 'maxFileSize', 'multiple', 'progress', 'showFileList', 'style', 'styleActive', 'styleDisabled', 'uploadId', 'uploadedFiles']
+        self.available_properties = ['children', 'id', 'accept', 'apiPath', 'className', 'disabled', 'isUploading', 'lastError', 'lastUploadedBatch', 'maxConcurrency', 'maxFileSize', 'multiple', 'progress', 'resetKey', 'showFileList', 'style', 'styleActive', 'styleDisabled', 'uploadId', 'uploadedFiles']
         self.available_wildcard_properties =            []
         _explicit_args = kwargs.pop('_explicit_args')
         _locals = locals()

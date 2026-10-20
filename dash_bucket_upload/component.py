@@ -1,6 +1,7 @@
 """BucketUpload component wrapper: snake_case kwargs and manager wiring."""
 from __future__ import annotations
 
+import uuid
 from typing import Any, Optional, Sequence
 
 from .BucketUpload import BucketUpload as _BucketUploadBase
@@ -34,6 +35,9 @@ class BucketUpload(_BucketUploadBase):
     - `isUploading`: `True` while any file is in flight.
     - `progress`: per-file progress for custom UI (throttled).
     - `lastError`: `{filename, message, phase}` for the latest failure.
+
+    To clear the widget back to its initial state, return `BucketUpload.reset()`
+    to its `resetKey` prop from any callback (see `reset`).
 
     Examples:
         >>> mgr = BucketUploadManager(app, endpoint_url='http://localhost:9000',
@@ -132,3 +136,27 @@ class BucketUpload(_BucketUploadBase):
         props.update(kwargs)
 
         super().__init__(**props)
+
+    @staticmethod
+    def reset() -> str:
+        """Value that resets a `BucketUpload` when returned to its `resetKey` prop.
+
+        The component cancels any uploads still in flight (their incomplete
+        multipart uploads are aborted), clears the file list, and returns its
+        outputs to their initial values: `uploadedFiles`, `lastUploadedBatch`,
+        `progress` and `lastError` become `None`, `isUploading` becomes `False`.
+        Objects that finished uploading stay in the bucket.
+
+        Each call returns a new unique value, because the component only
+        resets when `resetKey` changes.
+
+        Examples:
+            >>> @app.callback(Output('up', 'resetKey'), Input('clear', 'n_clicks'),
+            ...               prevent_initial_call=True)
+            ... def clear(_):
+            ...     return BucketUpload.reset()
+
+        Returns:
+            A fresh token for `Output(<component id>, 'resetKey')`.
+        """
+        return uuid.uuid4().hex

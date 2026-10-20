@@ -127,6 +127,7 @@ The `examples/` directory in the repository has runnable apps:
 | `examples/direct_mode.py` | Browser uploads straight to MinIO with presigned URLs |
 | `examples/relay_mode.py` | Parts relayed through the Dash server |
 | `examples/multiple_widgets.py` | Two widgets with different buckets, transports and limits |
+| `examples/reset.py` | A form whose "Start over" button resets the widget along with the rest of the app |
 
 ```bash
 uv run python examples/direct_mode.py

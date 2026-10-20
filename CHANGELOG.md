@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- `BucketUpload.reset()` and the `resetKey` prop: return `BucketUpload.reset()`
+  to `Output(<id>, 'resetKey')` to clear the file list and outputs back to the
+  initial state, e.g. as part of an app-wide reset. In-flight uploads are
+  cancelled; objects already in the bucket are not touched.
+- Changing `uploadId`, `apiPath`, `maxConcurrency` or `maxFileSize` while files
+  are uploading now cancels those uploads. Previously they kept running and
+  their late progress events could overwrite the component's state.
+
 ## 0.1.1 (2026-10-05)
 
 - Bucket errors are now logged on the `dash_bucket_upload.manager` logger with

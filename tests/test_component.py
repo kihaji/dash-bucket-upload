@@ -51,3 +51,15 @@ def test_snake_case_style_props():
 def test_version_is_exposed():
     import dash_bucket_upload
     assert dash_bucket_upload.__version__
+
+
+def test_reset_returns_a_fresh_token_each_call():
+    tokens = {BucketUpload.reset() for _ in range(100)}
+    assert len(tokens) == 100   # the component only resets when resetKey changes
+    assert all(isinstance(t, str) and t for t in tokens)
+
+
+def test_reset_key_is_a_component_prop():
+    token = BucketUpload.reset()
+    c = BucketUpload(id = 'x', api_path = '/my-upload', resetKey = token)
+    assert c.to_plotly_json()['props']['resetKey'] == token

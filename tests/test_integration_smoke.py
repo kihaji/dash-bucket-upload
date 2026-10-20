@@ -60,3 +60,58 @@ def test_upload_via_browser(dash_duo, s3, moto_endpoint, tmp_path):
 
     stored = s3.get_object(Bucket = BUCKET, Key = batch[0]['key'])['Body'].read()
     assert stored == payload
+
+
+def test_reset_clears_ui_but_keeps_uploaded_objects(dash_duo, s3, moto_endpoint, tmp_path):
+    from dash import Dash, Input, Output, html
+
+    from dash_bucket_upload import BucketUpload, BucketUploadManager
+
+    from .conftest import ACCESS_KEY, BUCKET, REGION, SECRET_KEY
+
+    app = Dash(__name__)
+    mgr = BucketUploadManager(
+        app,
+        endpoint_url = moto_endpoint,
+        region = REGION,
+        access_key = ACCESS_KEY,
+        secret_key = SECRET_KEY,
+        bucket = BUCKET,
+        prefix = 'smoke',
+        mode = 'relay',
+    )
+    app.layout = html.Div([
+        BucketUpload(id = 'up', manager = mgr),
+        html.Button('Reset', id = 'reset'),
+        html.Pre(id = 'out'),
+    ])
+
+    @app.callback(Output('up', 'resetKey'), Input('reset', 'n_clicks'), prevent_initial_call = True)
+    def reset(_):
+        return BucketUpload.reset()
+
+    @app.callback(Output('out', 'children'), Input('up', 'uploadedFiles'))
+    def show(files):
+        return json.dumps(files) if files else 'none'
+
+    dash_duo.start_server(app)
+
+    test_file = tmp_path / 'keep me.bin'
+    test_file.write_bytes(os.urandom(64 * 1024))
+    dash_duo.driver.find_element('css selector', '#up input[type=file]').send_keys(str(test_file))
+    dash_duo.wait_for_contains_text('#out', 'keep me.bin', timeout = 30)
+    key = json.loads(dash_duo.find_element('#out').text)[0]['key']
+    assert 'keep me.bin' in dash_duo.find_element('#up').text   # built-in file list row
+
+    dash_duo.find_element('#reset').click()
+    dash_duo.wait_for_text_to_equal('#out', 'none', timeout = 10)
+    assert 'keep me.bin' not in dash_duo.find_element('#up').text
+    assert s3.head_object(Bucket = BUCKET, Key = key)['ContentLength'] == 64 * 1024
+
+    # The widget is fully usable after a reset, and uploadedFiles starts afresh.
+    second = tmp_path / 'after reset.bin'
+    second.write_bytes(b'x' * 1024)
+    dash_duo.driver.find_element('css selector', '#up input[type=file]').send_keys(str(second))
+    dash_duo.wait_for_contains_text('#out', 'after reset.bin', timeout = 30)
+    files = json.loads(dash_duo.find_element('#out').text)
+    assert [f['filename'] for f in files] == ['after reset.bin']

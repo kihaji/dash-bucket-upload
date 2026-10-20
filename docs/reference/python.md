@@ -20,6 +20,6 @@ You only need it in code that builds layouts without a manager; see
      mkdocstrings would render an empty module. -->
 ::: dash_bucket_upload.component.BucketUpload
     options:
-      members: false
+      members: [reset]
       inherited_members: false
       show_bases: false

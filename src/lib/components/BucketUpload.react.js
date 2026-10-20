@@ -32,6 +32,7 @@ const BucketUpload = ({
     styleActive = null,
     styleDisabled = null,
     children = null,
+    resetKey = null,
     setProps,
 }) => {
     const [fileState, setFileState] = useState({});
@@ -40,20 +41,60 @@ const BucketUpload = ({
     const setPropsRef = useRef(setProps);
     setPropsRef.current = setProps;
 
+    const resetKeyRef = useRef(resetKey);
+    resetKeyRef.current = resetKey;
+
+    // A new engine per reset (resetKey) or config change; a replaced engine is
+    // cancelled below. Events from an engine created before the latest reset
+    // are dropped, so the settle events its cancellation emits can't
+    // repopulate the list that was just cleared. After a config change the old
+    // engine's events still apply, so its cancelled rows show as canceled.
     const engine = useMemo(
         () => createUploadEngine({
             apiBase: apiPath,
             uploadId,
             maxConcurrency,
             maxFileSize,
-            onEvent: (type, payload) => handleEvent(type, payload),
+            onEvent: (type, payload) => {
+                if (resetKeyRef.current === resetKey) {
+                    handleEvent(type, payload);
+                }
+            },
         }),
-        [apiPath, uploadId, maxConcurrency, maxFileSize]
+        [apiPath, uploadId, maxConcurrency, maxFileSize, resetKey]
     );
     const engineRef = useRef(engine);
     engineRef.current = engine;
 
-    useEffect(() => () => engineRef.current.cancelAll(), []);
+    // Cancel a replaced engine's in-flight uploads (aborting their multipart
+    // uploads server-side), and the current one's on unmount.
+    useEffect(() => () => engine.cancelAll(), [engine]);
+
+    // Reset to the initial state whenever resetKey changes (not on mount).
+    // Objects already in the bucket are untouched.
+    const lastResetKey = useRef(resetKey);
+    useEffect(() => {
+        if (lastResetKey.current === resetKey) {
+            return;
+        }
+        lastResetKey.current = resetKey;
+        const t = throttleRef.current;
+        if (t.timer) {
+            clearTimeout(t.timer);
+            t.timer = null;
+        }
+        uploadedRef.current = [];
+        setFileState({});
+        if (setPropsRef.current) {
+            setPropsRef.current({
+                uploadedFiles: null,
+                lastUploadedBatch: null,
+                progress: null,
+                isUploading: false,
+                lastError: null,
+            });
+        }
+    }, [resetKey]);
 
     const pushProgress = (files, force) => {
         const apply = () => {
@@ -204,6 +245,15 @@ BucketUpload.propTypes = {
      * Custom drop-zone content (replaces "Drag and Drop or Select Files").
      */
     children: PropTypes.node,
+
+    /**
+     * Change this to any new value to reset the component to its initial
+     * state: in-flight uploads are cancelled, the file list is cleared, and
+     * uploadedFiles, lastUploadedBatch, progress and lastError return to None
+     * (isUploading to False). Objects already uploaded to the bucket are not
+     * touched. From Python, return `BucketUpload.reset()` to this prop.
+     */
+    resetKey: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
 
     /**
      * (Output) All files uploaded by this component instance, cumulative

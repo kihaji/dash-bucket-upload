@@ -23,6 +23,7 @@ props use their camelCase names (`Output('up', 'disabled')`,
 | `style_active` | `styleActive` | `dict` | | Extra style while dragging files over. |
 | `style_disabled` | `styleDisabled` | `dict` | | Extra style while disabled. |
 | `children` | `children` | component(s) | "Drag and Drop or Select Files" | Drop-zone content. |
+| | `resetKey` | `str` or number | | Set to a new value to [reset the widget](../guide/callbacks.md#resetting-the-widget). Use `BucketUpload.reset()`. |
 
 ## Outputs
 

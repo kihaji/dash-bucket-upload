@@ -139,6 +139,46 @@ def show_error(err):
     If several files in a batch fail, `lastError` holds the last one. The
     built-in file list shows each file's status individually.
 
+## Resetting the widget
+
+To put the widget back to how it looked when the page loaded, typically as part
+of a larger "clear form" or "start over" action, return `BucketUpload.reset()`
+to its `resetKey` prop:
+
+```python
+@app.callback(
+    Output('up', 'resetKey'),
+    Output('project', 'value'),
+    Output('notes', 'value'),
+    Input('start-over', 'n_clicks'),
+    prevent_initial_call = True,
+)
+def start_over(_):
+    return BucketUpload.reset(), None, ''
+```
+
+A reset:
+
+- clears the built-in file list and progress bars;
+- sets `uploadedFiles`, `lastUploadedBatch`, `progress` and `lastError` back to
+  `None`, and `isUploading` to `False`;
+- cancels uploads still in progress, aborting their incomplete multipart
+  uploads in the bucket.
+
+For a complete app, see `examples/reset.py` in the repository.
+
+Files that **finished** uploading are not touched; they stay in the bucket. To
+delete them as part of the reset, do it in the same callback with your own S3
+client (read the keys from `State('up', 'uploadedFiles')`).
+
+`BucketUpload.reset()` returns a new random token on every call. The component
+resets only when `resetKey` *changes*, so don't return a constant.
+
+!!! note "Reset fires your output callbacks"
+    Setting the outputs back to `None` triggers callbacks that use them as
+    `Input`, with `None` as the value. Callbacks that already guard with
+    `if not batch:` need no change.
+
 ## Writing to component props
 
 Most props besides the outputs can be updated from callbacks like any Dash
@@ -150,7 +190,6 @@ def gate(project):
     return not project
 ```
 
-Don't change `uploadId`, `apiPath`, `maxConcurrency` or `maxFileSize` while
-files are uploading. Changing them replaces the component's upload engine, and
-uploads already running on the old one are no longer cancellable from the file
-list.
+Changing `uploadId`, `apiPath`, `maxConcurrency` or `maxFileSize` while files
+are uploading cancels those uploads, because the component builds a new upload
+engine for the new settings. Their rows show as canceled; finished rows stay.
