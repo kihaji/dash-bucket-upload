@@ -1,13 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.2.0 (2026-11-05)
 
 - `prefix_resolver` on `BucketUploadManager` and `register()`: a
   `(request, config) -> prefix | None` hook that resolves the key prefix per
   request. New keys go under the caller's prefix, and sign-parts, part,
   complete and abort reject keys outside it (HTTP 403), so one user cannot
-  complete or abort another's upload. Returning `None` or a blank prefix refuses the request.
+  complete or abort another's upload. Returning `None` or a blank prefix
+  refuses the request.
   See [Per-user prefixes](https://kihaji.github.io/dash-bucket-upload/guide/production/#per-user-prefixes).
+  Backward compatible: without a resolver, keys and routes behave as in 0.1.x.
+
+## 0.1.2 (2026-10-20)
 
 - `BucketUpload.reset()` and the `resetKey` prop: return `BucketUpload.reset()`
   to `Output(<id>, 'resetKey')` to clear the file list and outputs back to the
