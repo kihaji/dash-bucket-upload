@@ -63,6 +63,8 @@ request after `/create` carries the config name, the object key and the S3
 upload ID, and the server checks that the key matches the config's
 `<prefix>/<uuid4>/<filename>` pattern. A client therefore can't touch objects
 outside its config's prefix, and any worker or replica can serve any request.
+With a `prefix_resolver`, the pattern uses the prefix resolved for the
+requesting caller, so the check also keeps callers out of each other's uploads.
 
 This is why a custom `key_generator` must keep the default key shape, and why
 every process must register the same configs.

@@ -3,6 +3,7 @@
 ## Checklist
 
 - [ ] Gate the routes with [`auth_check`](#authentication).
+- [ ] Shared bucket with several users? Give each one its own key prefix with a [`prefix_resolver`](#per-user-prefixes).
 - [ ] Set `max_file_size`, plus `allowed_extensions` where it makes sense.
 - [ ] Add a bucket lifecycle rule that [aborts incomplete multipart uploads](#abandoned-uploads).
 - [ ] Direct mode: configure [bucket CORS](transports.md#bucket-cors) with your real origin and `ExposeHeaders: ETag`.
@@ -61,6 +62,45 @@ without extra setup.
     Lower it if your threat model needs to, but keep it longer than the time a
     single part can take on your slowest users' connections; expired URLs are
     refreshed automatically.
+
+## Per-user prefixes
+
+`auth_check` decides *whether* a request may upload; it does not keep users
+apart. With one static `prefix`, any caller who passes `auth_check` and learns
+another user's key and upload ID can sign parts for, complete or abort that
+upload.
+
+Pass `prefix_resolver` to resolve the prefix per request instead. It receives
+the `flask.Request` and the `UploadConfig`, and returns the key prefix for the
+caller making the request:
+
+```python
+def prefix_for(request, config):
+    user = request.headers.get('X-User-Id')     # whatever identifies your user
+    if user is None:
+        return None                              # refused with HTTP 403
+    return f'{config.prefix}/users/{user}'
+
+BucketUploadManager(app, ..., prefix = 'incoming', prefix_resolver = prefix_for)
+```
+
+- `/create` puts the new key under the resolved prefix:
+  `incoming/users/<user>/<uuid4>/<filename>`.
+- `/sign-parts`, `/part`, `/complete` and `/abort` check the submitted key
+  against the prefix resolved for *that* request, so one user's calls on
+  another user's key are refused with HTTP 403.
+- Returning `None` refuses the request with HTTP 403, e.g. when the caller
+  has no workspace selected. A blank prefix (`''`, `'/'`) is refused too,
+  since it would put every such caller in the bucket root together.
+- The returned value replaces `prefix` rather than nesting under it; build on
+  `config.prefix` yourself, as above, if you want both.
+
+The resolver runs on every route, so it must give the same answer for the same
+caller across the life of an upload, on every worker. Derive it from the
+request (headers, cookies, the login session), not from process memory.
+
+Set it per widget with `mgr.register('name', prefix_resolver = ...)`; a
+registered config without one inherits the manager's.
 
 ## Abandoned uploads
 

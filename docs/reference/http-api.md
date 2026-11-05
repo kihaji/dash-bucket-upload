@@ -110,7 +110,8 @@ in front of the Dash app, such as a reverse proxy.
 | 400 | `partNumber must be an integer`, `partNumber must be in [1, 10000]` | Bad `/part` request |
 | 400 | `parts must be a non-empty list of {partNumber, etag}` | Bad `/complete` request |
 | 403 | `not authorized` | `auth_check` returned `False` |
-| 403 | `key does not belong to this upload configuration` | Key doesn't match the config's pattern |
+| 403 | `key does not belong to this upload configuration` | Key doesn't match the config's pattern (with a `prefix_resolver`: the caller's resolved prefix) |
+| 403 | `no upload prefix for this caller` | `prefix_resolver` returned `None` or a blank prefix |
 | 403 | `sign-parts is only available in direct mode` | Config is in relay mode |
 | 403 | `part upload is only available in relay mode` | Config is in direct mode |
 | 404 | `unknown uploadId 'x'` | No config with that name in this process |

@@ -5,7 +5,8 @@ The routes are deliberately stateless — nothing about an in-progress upload is
 held in server memory, so the widget works unchanged under multi-worker
 servers (gunicorn etc.). The boundary that keeps clients inside their sandbox
 is `key_matches`: every route that receives a key verifies it has the shape
-this widget's key generator produces for its configured prefix.
+this widget's key generator produces for its prefix — the configured one, or
+the one a `prefix_resolver` returns for the calling request.
 """
 from __future__ import annotations
 
@@ -27,6 +28,10 @@ if TYPE_CHECKING:
     from botocore.config import Config
 
 logger = logging.getLogger(__name__)
+
+PrefixResolver = Callable[[flask.Request, 'UploadConfig'], 'str | None']
+"""`(request, config) -> prefix | None`: the key prefix for the caller making
+`request`, or `None` to refuse it (HTTP 403)."""
 
 SIGN_BATCH_MAX = 100
 _RELAY_READ_CHUNK = 1 * MiB
@@ -66,6 +71,12 @@ class UploadConfig:
             Must be at least 5 MiB.
         presign_expiration: Lifetime of presigned part URLs in seconds
             (direct mode). Expired URLs are refreshed automatically.
+        prefix_resolver: `(request, config) -> prefix | None`, called with the
+            `flask.Request` on every route. Its result replaces `prefix` for
+            that request, both for new keys and for checking keys on follow-up
+            calls, so a caller can only touch uploads under its own prefix.
+            Returning `None` or a blank prefix rejects the request with HTTP
+            403. `None` (no resolver) uses the static `prefix`.
     """
     upload_id: str
     bucket: str
@@ -76,6 +87,7 @@ class UploadConfig:
     allowed_mime_types: Sequence[str] | None = None
     part_size: int | None = None
     presign_expiration: int = 3600
+    prefix_resolver: PrefixResolver | None = None
 
 
 class BucketUploadManager:
@@ -135,6 +147,9 @@ class BucketUploadManager:
         allowed_mime_types: Default MIME type allowlist.
         part_size: Default fixed part size in bytes (`None` = automatic).
         presign_expiration: Default presigned-URL lifetime in seconds.
+        prefix_resolver: Default per-request prefix hook,
+            `(request, config) -> prefix | None`, so one caller cannot touch
+            another's upload. See `UploadConfig.prefix_resolver`.
         url_prefix: URL path the routes are mounted under. Each manager on one
             app needs its own.
         auth_check: Called with the `flask.Request` before every route; return
@@ -142,7 +157,8 @@ class BucketUploadManager:
         key_generator: `(config, sanitized_filename) -> key` replacement for
             the default `<prefix>/<uuid4>/<filename>` scheme. Generated keys
             must still match that shape, because the stateless routes check
-            every later request against it.
+            every later request against it. With a `prefix_resolver`, the
+            config passed in carries the resolved prefix.
 
     Raises:
         TypeError: `app` is neither a Dash nor a Flask app.
@@ -176,6 +192,7 @@ class BucketUploadManager:
         allowed_mime_types: Sequence[str] | None = None,
         part_size: int | None = None,
         presign_expiration: int = 3600,
+        prefix_resolver: PrefixResolver | None = None,
         url_prefix: str = '/dash-bucket-upload',
         auth_check: Callable[[flask.Request], bool] | None = None,
         key_generator: Callable[[UploadConfig, str], str] | None = None,
@@ -214,6 +231,7 @@ class BucketUploadManager:
             allowed_mime_types = allowed_mime_types,
             part_size = part_size,
             presign_expiration = presign_expiration,
+            prefix_resolver = prefix_resolver,
         )
         if bucket is not None:
             self._configs['default'] = self._defaults
@@ -239,6 +257,7 @@ class BucketUploadManager:
         allowed_mime_types: Sequence[str] | None = None,
         part_size: int | None = None,
         presign_expiration: int | None = None,
+        prefix_resolver: PrefixResolver | None = None,
     ) -> UploadConfig:
         """Register a named per-widget config; unset fields fall back to the
         manager-level defaults.
@@ -261,6 +280,8 @@ class BucketUploadManager:
             allowed_mime_types: MIME type allowlist.
             part_size: Fixed part size in bytes.
             presign_expiration: Presigned-URL lifetime in seconds.
+            prefix_resolver: Per-request prefix hook for this config,
+                `(request, config) -> prefix | None`.
 
         Returns:
             The stored config.
@@ -278,6 +299,7 @@ class BucketUploadManager:
                 'allowed_mime_types': allowed_mime_types,
                 'part_size': part_size,
                 'presign_expiration': presign_expiration,
+                'prefix_resolver': prefix_resolver,
             }.items() if value is not None
         }
         cfg = replace(self._defaults, upload_id = upload_id, **overrides)
@@ -353,14 +375,20 @@ class BucketUploadManager:
             raise UploadValidationError('request body must be a JSON object')
         return body
 
-    def _config_from(self, body: dict) -> UploadConfig:
+    def _config_for_caller(self, body: dict) -> UploadConfig:
         upload_id = body.get('uploadId')
         if not isinstance(upload_id, str):
             raise UploadValidationError('uploadId is required')
         cfg = self._configs.get(upload_id)
         if cfg is None:
             raise UploadValidationError(f'unknown uploadId {upload_id!r}', status = 404)
-        return cfg
+        if cfg.prefix_resolver is None:
+            return cfg
+        prefix = cfg.prefix_resolver(flask.request, cfg)
+        # A blank prefix would put every such caller in the bucket root, together.
+        if prefix is None or not prefix.strip().strip('/'):
+            raise UploadValidationError('no upload prefix for this caller', status = 403)
+        return replace(cfg, prefix = prefix)
 
     def _checked_key(self, cfg: UploadConfig, body: dict) -> str:
         key = body.get('key')
@@ -379,7 +407,7 @@ class BucketUploadManager:
 
     def _route_create(self):
         body = self._json_body()
-        cfg = self._config_from(body)
+        cfg = self._config_for_caller(body)
         filename = validate_upload(cfg, body.get('filename'), body.get('size'), body.get('contentType'))
 
         if self._key_generator is not None:
@@ -402,7 +430,7 @@ class BucketUploadManager:
 
     def _route_sign_parts(self):
         body = self._json_body()
-        cfg = self._config_from(body)
+        cfg = self._config_for_caller(body)
         if cfg.mode != 'direct':
             raise UploadValidationError('sign-parts is only available in direct mode', status = 403)
         key = self._checked_key(cfg, body)
@@ -430,7 +458,7 @@ class BucketUploadManager:
     def _route_part(self):
         args = flask.request.args
         body = {'uploadId': args.get('uploadId'), 'key': args.get('key'), 's3UploadId': args.get('s3UploadId')}
-        cfg = self._config_from(body)
+        cfg = self._config_for_caller(body)
         if cfg.mode != 'relay':
             raise UploadValidationError('part upload is only available in relay mode', status = 403)
         key = self._checked_key(cfg, body)
@@ -470,7 +498,7 @@ class BucketUploadManager:
 
     def _route_complete(self):
         body = self._json_body()
-        cfg = self._config_from(body)
+        cfg = self._config_for_caller(body)
         key = self._checked_key(cfg, body)
         s3_upload_id = self._s3_upload_id_from(body)
 
@@ -508,7 +536,7 @@ class BucketUploadManager:
 
     def _route_abort(self):
         body = self._json_body()
-        cfg = self._config_from(body)
+        cfg = self._config_for_caller(body)
         key = self._checked_key(cfg, body)
         s3_upload_id = self._s3_upload_id_from(body)
         self._s3.abort_multipart_upload(Bucket = cfg.bucket, Key = key, UploadId = s3_upload_id)

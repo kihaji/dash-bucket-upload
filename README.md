@@ -168,6 +168,9 @@ automatically.
   BucketUploadManager(app, ..., auth_check = lambda request: current_user.is_authenticated)
   ```
 
+- **Per-user prefixes.** With several users on one bucket, pass
+  `prefix_resolver = lambda request, config: ...` to put each caller's uploads
+  under their own prefix; follow-up calls on another caller's key get HTTP 403.
 - **Limits.** Set `max_file_size`, and `allowed_extensions` /
   `allowed_mime_types` where applicable.
 - **Abandoned uploads.** Add a bucket lifecycle rule aborting incomplete
